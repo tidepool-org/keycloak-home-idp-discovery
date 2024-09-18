@@ -11,8 +11,10 @@ import org.keycloak.events.Errors;
 import org.keycloak.forms.login.LoginFormsProvider;
 import org.keycloak.models.IdentityProviderModel;
 import org.keycloak.models.KeycloakSession;
+import org.keycloak.models.ModelDuplicateException;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserModel;
+import org.keycloak.models.utils.KeycloakModelUtils;
 import org.keycloak.services.managers.AuthenticationManager;
 
 import java.util.List;
@@ -102,8 +104,6 @@ final class HomeIdpDiscoveryAuthenticator extends AbstractUsernameFormAuthentica
                 Response challengeResponse = challenge(authenticationFlowContext, getMessageIfLoginEmailAllowed(authenticationFlowContext, Messages.UNKNOWN_USERNAME), FIELD_USERNAME);
                 authenticationFlowContext.failureChallenge(AuthenticationFlowError.UNKNOWN_USER, challengeResponse);
             }
-            authenticationFlowContext.attempted();
-
         } else {
             RememberMe rememberMe = context.rememberMe();
             rememberMe.handleAction(formData);
@@ -113,6 +113,8 @@ final class HomeIdpDiscoveryAuthenticator extends AbstractUsernameFormAuthentica
     }
 
     private String setUserInContext(AuthenticationFlowContext context, String username) {
+        context.clearUser();
+
         username = trimToNull(username);
 
         if (username == null) {
@@ -127,7 +129,21 @@ final class HomeIdpDiscoveryAuthenticator extends AbstractUsernameFormAuthentica
         context.getEvent().detail(Details.USERNAME, username);
         context.getAuthenticationSession().setAuthNote(ATTEMPTED_USERNAME, username);
 
+        context.setUser(findUserByUsername(context, username));
+
         return username;
+    }
+
+    private UserModel findUserByUsername(AuthenticationFlowContext context, String username) {
+        try {
+            return KeycloakModelUtils.findUserByNameOrEmail(context.getSession(), context.getRealm(),
+                username);
+        } catch (ModelDuplicateException ex) {
+            LOG.warnf(ex, "Could not uniquely identify the user. Multiple users with name or email '%s' found.",
+                username);
+        }
+
+        return null;
     }
 
     private static String trimToNull(String username) {

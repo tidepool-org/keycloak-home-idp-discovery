@@ -1,51 +1,49 @@
 package de.sventorben.keycloak.authentication.hidpd;
 
+import de.sventorben.keycloak.authentication.hidpd.discovery.spi.HomeIdpDiscoverer;
 import org.jboss.logging.Logger;
 import org.keycloak.authentication.AuthenticationFlowContext;
-import org.keycloak.authentication.AuthenticationFlowError;
 import org.keycloak.authentication.Authenticator;
 import org.keycloak.authentication.authenticators.browser.AbstractUsernameFormAuthenticator;
-import org.keycloak.authentication.authenticators.conditional.ConditionalAuthenticator;
 import org.keycloak.events.Details;
 import org.keycloak.events.Errors;
-import org.keycloak.forms.login.LoginFormsProvider;
 import org.keycloak.models.IdentityProviderModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.ModelDuplicateException;
 import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserModel;
 import org.keycloak.models.utils.KeycloakModelUtils;
-import org.keycloak.services.managers.AuthenticationManager;
 
-import javax.ws.rs.core.MultivaluedMap;
-import javax.ws.rs.core.Response;
 import java.util.List;
 
-import static org.keycloak.authentication.authenticators.browser.AbstractUsernameFormAuthenticator.ATTEMPTED_USERNAME;
 import static org.keycloak.protocol.oidc.OIDCLoginProtocol.LOGIN_HINT_PARAM;
-import static org.keycloak.services.validation.Validation.FIELD_USERNAME;
 
-final class HomeIdpDiscoveryLoginHintAuthenticator implements Authenticator {
+final class HomeIdpDiscoveryLoginHintAuthenticator extends AbstractUsernameFormAuthenticator implements Authenticator  {
 
     private static final Logger LOG = Logger.getLogger(HomeIdpDiscoveryLoginHintAuthenticator.class);
 
-    HomeIdpDiscoveryLoginHintAuthenticator() {
+    private final AbstractHomeIdpDiscoveryAuthenticatorFactory.DiscovererConfig discovererConfig;
+
+    HomeIdpDiscoveryLoginHintAuthenticator(AbstractHomeIdpDiscoveryAuthenticatorFactory.DiscovererConfig discovererConfig) {
+        this.discovererConfig = discovererConfig;
     }
 
     @Override
     public void authenticate(AuthenticationFlowContext authenticationFlowContext) {
-        HomeIdpAuthenticationFlowContext context = new HomeIdpAuthenticationFlowContext(authenticationFlowContext);
+        LoginHint hidpdLoginHint = new LoginHint(authenticationFlowContext, new Users(authenticationFlowContext.getSession()));
+        Redirector hidpdRedirector = new Redirector(authenticationFlowContext);
 
-        String loginHint = trimToNull(context.loginHint().getFromSession());
+        String loginHint = trimToNull(hidpdLoginHint.getFromSession());
         if (loginHint != null) {
             String username = setUserInContext(authenticationFlowContext, loginHint);
             // Only redirect to the IDP if the user doesn't exist
             if (authenticationFlowContext.getUser() == null) {
-                final List<IdentityProviderModel> homeIdps = context.discoverer().discoverForUser(username);
+                HomeIdpDiscoverer discoverer = authenticationFlowContext.getSession().getProvider(HomeIdpDiscoverer.class, discovererConfig.getProviderId());
+                final List<IdentityProviderModel> homeIdps = discoverer.discoverForUser(authenticationFlowContext, username);
                 if (homeIdps.size() == 1) {
                     IdentityProviderModel homeIdp = homeIdps.get(0);
-                    context.loginHint().setInAuthSession(homeIdp, username);
-                    context.redirector().redirectTo(homeIdp);
+                    hidpdLoginHint.setInAuthSession(homeIdp, username);
+                    hidpdRedirector.redirectTo(homeIdp);
                     return;
                 }
             }
