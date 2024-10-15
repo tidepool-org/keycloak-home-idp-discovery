@@ -1,6 +1,6 @@
 package de.sventorben.keycloak.authentication.hidpd;
 
-import org.jboss.logging.Logger;
+import de.sventorben.keycloak.authentication.hidpd.discovery.email.EmailHomeIdpDiscoveryAuthenticatorFactoryDiscovererConfig;
 import org.keycloak.Config;
 import org.keycloak.authentication.Authenticator;
 import org.keycloak.authentication.AuthenticatorFactory;
@@ -10,14 +10,14 @@ import org.keycloak.models.KeycloakSessionFactory;
 import org.keycloak.provider.ProviderConfigProperty;
 import org.keycloak.provider.ServerInfoAwareProviderFactory;
 
-import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-import static org.keycloak.models.AuthenticationExecutionModel.Requirement.*;
+import static org.keycloak.models.AuthenticationExecutionModel.Requirement.DISABLED;
+import static org.keycloak.models.AuthenticationExecutionModel.Requirement.REQUIRED;
 
 public final class HomeIdpDiscoveryMatchingEmailAuthenticatorFactory implements AuthenticatorFactory, ServerInfoAwareProviderFactory {
-
 
     private static final AuthenticationExecutionModel.Requirement[] REQUIREMENT_CHOICES = new AuthenticationExecutionModel.Requirement[]{REQUIRED, DISABLED};
 
@@ -25,7 +25,11 @@ public final class HomeIdpDiscoveryMatchingEmailAuthenticatorFactory implements 
 
     public static final String CONF_NEGATE = "negate";
 
-    private Config.Scope config;
+    private final AbstractHomeIdpDiscoveryAuthenticatorFactory.DiscovererConfig discovererConfig;
+
+    public HomeIdpDiscoveryMatchingEmailAuthenticatorFactory() {
+        this.discovererConfig = new EmailHomeIdpDiscoveryAuthenticatorFactoryDiscovererConfig();
+    }
 
     @Override
     public String getDisplayType() {
@@ -59,24 +63,25 @@ public final class HomeIdpDiscoveryMatchingEmailAuthenticatorFactory implements 
 
     @Override
     public List<ProviderConfigProperty> getConfigProperties() {
+        List<ProviderConfigProperty> properties = new ArrayList<>(this.discovererConfig.getProperties());
+
         ProviderConfigProperty negateOutput = new ProviderConfigProperty();
         negateOutput.setType(ProviderConfigProperty.BOOLEAN_TYPE);
         negateOutput.setName(CONF_NEGATE);
         negateOutput.setLabel("Negate output");
         negateOutput.setHelpText("Apply a NOT to the check result. When this is true, then the condition will evaluate to true if the email does NOT match the discovered idp.");
 
-        return List.of(negateOutput);
+        properties.add(negateOutput);
+        return properties;
     }
 
     @Override
     public Authenticator create(KeycloakSession session) {
-        return new HomeIdpDiscoveryMatchingEmailAuthenticator();
+        return new HomeIdpDiscoveryMatchingEmailAuthenticator(this.discovererConfig);
     }
 
     @Override
-    public void init(Config.Scope config) {
-        this.config = config;
-    }
+    public void init(Config.Scope config) { }
 
     @Override
     public void postInit(KeycloakSessionFactory factory) {
