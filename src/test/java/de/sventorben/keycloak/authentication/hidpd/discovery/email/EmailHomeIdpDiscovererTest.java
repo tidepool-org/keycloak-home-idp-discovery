@@ -1,12 +1,11 @@
-package de.sventorben.keycloak.authentication.hidpd;
+package de.sventorben.keycloak.authentication.hidpd.discovery.email;
 
+import de.sventorben.keycloak.authentication.hidpd.Users;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.keycloak.authentication.AuthenticationFlowContext;
 import org.keycloak.models.RealmModel;
-import org.keycloak.models.UserModel;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -15,24 +14,23 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
-class HomeIdpDiscovererTest {
+class EmailHomeIdpDiscovererTest {
 
     @Mock
     AuthenticationFlowContext context;
 
-    HomeIdpDiscoverer cut;
+    EmailHomeIdpDiscoverer cut;
 
     @BeforeEach
     void setUp() {
         when(context.getRealm()).thenReturn(mock(RealmModel.class));
-        when(context.getUser()).thenReturn(mock(UserModel.class));
-        cut = new HomeIdpDiscoverer(context);
+        cut = new EmailHomeIdpDiscoverer(mock(Users.class), mock(IdentityProviders.class));
     }
 
     @Test
     void doesNotThrowExceptionWhenNotConfigured() {
         when(context.getAuthenticatorConfig()).thenReturn(null);
-        assertThatCode(() -> cut.discoverForUser("test"))
+        assertThatCode(() -> cut.discoverForUser(context, "test"))
             .doesNotThrowAnyException();
     }
 

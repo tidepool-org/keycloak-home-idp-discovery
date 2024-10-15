@@ -1,3 +1,5 @@
 de.sventorben.keycloak.authentication.hidpd.HomeIdpDiscoveryAuthenticatorFactory
+de.sventorben.keycloak.authentication.hidpd.discovery.orgs.email.OrgsEmailHomeIdpDiscoveryAuthenticatorFactory
+de.sventorben.keycloak.authentication.hidpd.discovery.orgs.domainhint.OrgsDomainHomeIdpDiscoveryAuthenticatorFactory
 de.sventorben.keycloak.authentication.hidpd.HomeIdpDiscoveryLoginHintAuthenticatorFactory
 de.sventorben.keycloak.authentication.hidpd.HomeIdpDiscoveryMatchingEmailAuthenticatorFactory

@@ -1,11 +1,11 @@
 package de.sventorben.keycloak.authentication;
 
+import jakarta.ws.rs.core.Response;
 import org.keycloak.admin.client.Keycloak;
 import org.keycloak.admin.client.resource.AuthenticationManagementResource;
 import org.keycloak.representations.idm.AuthenticationExecutionInfoRepresentation;
 import org.keycloak.representations.idm.AuthenticatorConfigRepresentation;
 
-import javax.ws.rs.core.Response;
 import java.util.Map;
 import java.util.function.Consumer;
 
@@ -24,6 +24,18 @@ final class AuthenticatorConfig {
 
     void setUserAttribute(String userAttribute) {
         updateProperty("userAttribute", userAttribute);
+    }
+
+    void enableForwardingUnverifiedEmails() {
+        setForwardingUnverifiedEmails(true);
+    }
+
+    void disableForwardingUnverifiedEmails() {
+        setForwardingUnverifiedEmails(false);
+    }
+
+    private void setForwardingUnverifiedEmails(Boolean enabled) {
+        updateProperty("forwardUnverifiedEmail", enabled);
     }
 
     void enableForwarding() {
@@ -67,6 +79,7 @@ final class AuthenticatorConfig {
         disableBypassLoginPage();
         setUserAttribute("email");
         enableForwardToFirstMatch();
+        disableForwardingUnverifiedEmails();
     }
 
     private void updateProperty(String propertyName, Boolean enabled) {
@@ -95,8 +108,10 @@ final class AuthenticatorConfig {
             if (authenticationConfigId == null) {
                 authenticatorConfig = new AuthenticatorConfigRepresentation();
                 authenticatorConfig.setAlias(authenticatorConfigAlias);
-                Response response = flows.newExecutionConfig(execution.getId(), authenticatorConfig);
-                String location = response.getHeaderString("Location");
+                String location;
+                try (Response response = flows.newExecutionConfig(execution.getId(), authenticatorConfig)) {
+                    location = response.getHeaderString("Location");
+                }
                 authenticationConfigId = location.substring(location.lastIndexOf("/") + 1);
             } else {
                 authenticatorConfig = flows.getAuthenticatorConfig(authenticationConfigId);

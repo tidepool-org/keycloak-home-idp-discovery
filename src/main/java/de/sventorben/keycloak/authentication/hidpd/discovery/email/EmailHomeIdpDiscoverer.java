@@ -1,47 +1,46 @@
-package de.sventorben.keycloak.authentication.hidpd;
+package de.sventorben.keycloak.authentication.hidpd.discovery.email;
 
+import de.sventorben.keycloak.authentication.hidpd.PublicAPI;
+import de.sventorben.keycloak.authentication.hidpd.Users;
+import de.sventorben.keycloak.authentication.hidpd.discovery.spi.HomeIdpDiscoverer;
 import org.jboss.logging.Logger;
 import org.keycloak.authentication.AuthenticationFlowContext;
-import org.keycloak.models.AuthenticatorConfigModel;
 import org.keycloak.models.FederatedIdentityModel;
 import org.keycloak.models.IdentityProviderModel;
-import org.keycloak.models.RealmModel;
 import org.keycloak.models.UserModel;
 
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 import java.util.stream.Collectors;
 
-final class HomeIdpDiscoverer {
+import static java.util.Collections.emptyList;
 
-    private static final Logger LOG = Logger.getLogger(HomeIdpDiscoverer.class);
+@PublicAPI(unstable = true)
+public final class EmailHomeIdpDiscoverer implements HomeIdpDiscoverer {
 
-    private final DomainExtractor domainExtractor;
-    private final AuthenticationFlowContext context;
+    private static final Logger LOG = Logger.getLogger(EmailHomeIdpDiscoverer.class);
+    private static final String EMAIL_ATTRIBUTE = "email";
+    private final Users users;
+    private final IdentityProviders identityProviders;
 
-    HomeIdpDiscoverer(AuthenticationFlowContext context) {
-        this(new DomainExtractor(new HomeIdpDiscoveryConfig(context.getAuthenticatorConfig())), context);
+    @PublicAPI(unstable = true)
+    public EmailHomeIdpDiscoverer(Users users, IdentityProviders identityProviders) {
+        this.users = users;
+        this.identityProviders = identityProviders;
     }
 
-    private HomeIdpDiscoverer(DomainExtractor domainExtractor, AuthenticationFlowContext context) {
-        this.domainExtractor = domainExtractor;
-        this.context = context;
-    }
-
-    public List<IdentityProviderModel> discoverForUser(String username) {
+    @Override
+    public List<IdentityProviderModel> discoverForUser(AuthenticationFlowContext context, String username) {
+        EmailHomeIdpDiscovererConfig config = new EmailHomeIdpDiscovererConfig(context.getAuthenticatorConfig());
+        DomainExtractor domainExtractor = new DomainExtractor(config);
 
         String realmName = context.getRealm().getName();
-        AuthenticatorConfigModel authenticatorConfig = context.getAuthenticatorConfig();
         LOG.tracef("Trying to discover home IdP for username '%s' in realm '%s' with authenticator config '%s'",
-            username, realmName, authenticatorConfig == null ? "<unconfigured>" : authenticatorConfig.getAlias());
+            username, realmName, config.getAlias());
 
         List<IdentityProviderModel> homeIdps = new ArrayList<>();
 
-        final Optional<String> emailDomain;
-        UserModel user = context.getUser();
+        final Optional<Domain> emailDomain;
+        UserModel user = users.lookupBy(username);
         if (user == null) {
             LOG.tracef("No user found in AuthenticationFlowContext. Extracting domain from provided username '%s'.",
                 username);
@@ -49,12 +48,18 @@ final class HomeIdpDiscoverer {
         } else {
             LOG.tracef("User found in AuthenticationFlowContext. Extracting domain from stored user '%s'.",
                 user.getId());
-            emailDomain = domainExtractor.extractFrom(user);
+            if (EMAIL_ATTRIBUTE.equalsIgnoreCase(config.userAttribute()) && !user.isEmailVerified()
+                && !config.forwardUserWithUnverifiedEmail()) {
+                LOG.warnf("Email address of user '%s' is not verified and forwarding not enabled", user.getId());
+                emailDomain = Optional.empty();
+            } else {
+                emailDomain = domainExtractor.extractFrom(user);
+            }
         }
 
         if (emailDomain.isPresent()) {
-            String domain = emailDomain.get();
-            homeIdps = discoverHomeIdps(domain, user, username);
+            Domain domain = emailDomain.get();
+            homeIdps = discoverHomeIdps(context, domain, user, username);
             if (homeIdps.isEmpty()) {
                 LOG.infof("Could not find home IdP for domain '%s' and user '%s' in realm '%s'",
                     domain, username, realmName);
@@ -66,10 +71,10 @@ final class HomeIdpDiscoverer {
         return homeIdps;
     }
 
-    private List<IdentityProviderModel> discoverHomeIdps(String domain, UserModel user, String username) {
+    private List<IdentityProviderModel> discoverHomeIdps(AuthenticationFlowContext context, Domain domain, UserModel user, String username) {
         final Map<String, String> linkedIdps;
 
-        HomeIdpDiscoveryConfig config = new HomeIdpDiscoveryConfig(context.getAuthenticatorConfig());
+        EmailHomeIdpDiscovererConfig config = new EmailHomeIdpDiscovererConfig(context.getAuthenticatorConfig());
         if (user == null || !config.forwardToLinkedIdp()) {
             linkedIdps = Collections.emptyMap();
             LOG.tracef(
@@ -85,22 +90,26 @@ final class HomeIdpDiscoverer {
                     Collectors.toMap(FederatedIdentityModel::getIdentityProvider, FederatedIdentityModel::getUserName));
         }
 
-        List<IdentityProviderModel> enabledIdps = determineEnabledIdps();
-        List<IdentityProviderModel> enabledIdpsWithMatchingDomain = filterIdpsWithMatchingDomainFrom(enabledIdps,
-            domain,
-            config);
+        List<IdentityProviderModel> candidateIdps = identityProviders.candidatesForHomeIdp(context, user);
+        if (candidateIdps == null) {
+            candidateIdps = emptyList();
+        }
+        List<IdentityProviderModel> idpsWithMatchingDomain = identityProviders.withMatchingDomain(context, candidateIdps, domain);
+        if (idpsWithMatchingDomain == null) {
+            idpsWithMatchingDomain = emptyList();
+        }
 
         // Prefer linked IdP with matching domain first
-        List<IdentityProviderModel> homeIdps = getLinkedIdpsFrom(enabledIdpsWithMatchingDomain, linkedIdps);
+        List<IdentityProviderModel> homeIdps = getLinkedIdpsFrom(idpsWithMatchingDomain, linkedIdps);
 
         if (homeIdps.isEmpty()) {
             if (!linkedIdps.isEmpty()) {
                 // Prefer linked and enabled IdPs without matching domain in favor of not linked IdPs with matching domain
-                homeIdps = getLinkedIdpsFrom(enabledIdps, linkedIdps);
+                homeIdps = getLinkedIdpsFrom(candidateIdps, linkedIdps);
             }
             if (homeIdps.isEmpty()) {
                 // Fallback to not linked IdPs with matching domain (general case if user logs in for the first time)
-                homeIdps = enabledIdpsWithMatchingDomain;
+                homeIdps = idpsWithMatchingDomain;
                 logFoundIdps("non-linked", "matching", homeIdps, domain, username);
             } else {
                 logFoundIdps("non-linked", "non-matching", homeIdps, domain, username);
@@ -112,7 +121,7 @@ final class HomeIdpDiscoverer {
         return homeIdps;
     }
 
-    private void logFoundIdps(String idpQualifier, String domainQualifier, List<IdentityProviderModel> homeIdps, String domain, String username) {
+    private void logFoundIdps(String idpQualifier, String domainQualifier, List<IdentityProviderModel> homeIdps, Domain domain, String username) {
         String homeIdpsString = homeIdps.stream()
             .map(IdentityProviderModel::getAlias)
             .collect(Collectors.joining(","));
@@ -126,25 +135,7 @@ final class HomeIdpDiscoverer {
             .collect(Collectors.toList());
     }
 
-    private List<IdentityProviderModel> filterIdpsWithMatchingDomainFrom(List<IdentityProviderModel> enabledIdps, String domain, HomeIdpDiscoveryConfig config) {
-        String userAttributeName = config.userAttribute();
-        List<IdentityProviderModel> idpsWithMatchingDomain = enabledIdps.stream()
-            .filter(it -> new IdentityProviderModelConfig(it).hasDomain(userAttributeName, domain))
-            .collect(Collectors.toList());
-        LOG.tracef("IdPs with matching domain '%s' for attribute '%s': %s", domain, userAttributeName,
-            idpsWithMatchingDomain.stream().map(IdentityProviderModel::getAlias).collect(Collectors.joining(",")));
-        return idpsWithMatchingDomain;
+    @Override
+    public void close() {
     }
-
-    private List<IdentityProviderModel> determineEnabledIdps() {
-        RealmModel realm = context.getRealm();
-        List<IdentityProviderModel> enabledIdps = realm.getIdentityProvidersStream()
-            .filter(IdentityProviderModel::isEnabled)
-            .collect(Collectors.toList());
-        LOG.tracef("Enabled IdPs in realm '%s': %s",
-            realm.getName(),
-            enabledIdps.stream().map(IdentityProviderModel::getAlias).collect(Collectors.joining(",")));
-        return enabledIdps;
-    }
-
 }

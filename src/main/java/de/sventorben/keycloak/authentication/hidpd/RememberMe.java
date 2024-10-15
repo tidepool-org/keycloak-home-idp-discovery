@@ -1,17 +1,16 @@
 package de.sventorben.keycloak.authentication.hidpd;
 
+import jakarta.ws.rs.core.MultivaluedMap;
 import org.keycloak.authentication.AuthenticationFlowContext;
 import org.keycloak.events.Details;
 import org.keycloak.models.RealmModel;
 import org.keycloak.services.managers.AuthenticationManager;
 
-import javax.ws.rs.core.MultivaluedMap;
-
 final class RememberMe {
 
     private final AuthenticationFlowContext context;
 
-    public RememberMe(AuthenticationFlowContext context) {
+    RememberMe(AuthenticationFlowContext context) {
         this.context = context;
     }
 
@@ -22,7 +21,7 @@ final class RememberMe {
         if (remember) {
             AuthenticationManager.createRememberMeCookie(username, context.getUriInfo(), context.getSession());
         } else {
-            AuthenticationManager.expireRememberMeCookie(realm, context.getUriInfo(), context.getSession());
+            AuthenticationManager.expireRememberMeCookie(context.getSession());
         }
     }
 
@@ -41,7 +40,6 @@ final class RememberMe {
     }
 
     String getUserName() {
-        return AuthenticationManager.getRememberMeUsername(context.getRealm(),
-            context.getHttpRequest().getHttpHeaders());
+        return AuthenticationManager.getRememberMeUsername(context.getSession());
     }
 }
