@@ -13,14 +13,8 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import javax.ws.rs.core.MultivaluedHashMap;
-import javax.ws.rs.core.MultivaluedMap;
-
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.keycloak.protocol.oidc.OIDCLoginProtocol.PROMPT_PARAM;
-import static org.keycloak.protocol.oidc.OIDCLoginProtocol.PROMPT_VALUE_CONSENT;
-import static org.keycloak.protocol.oidc.OIDCLoginProtocol.PROMPT_VALUE_LOGIN;
-import static org.keycloak.protocol.oidc.OIDCLoginProtocol.PROMPT_VALUE_SELECT_ACCOUNT;
+import static org.keycloak.protocol.oidc.OIDCLoginProtocol.*;
 import static org.keycloak.protocol.saml.SamlProtocol.SAML_FORCEAUTHN_REQUIREMENT;
 import static org.keycloak.protocol.saml.SamlProtocol.SAML_LOGIN_REQUEST_FORCEAUTHN;
 import static org.mockito.BDDMockito.given;
@@ -29,10 +23,13 @@ import static org.mockito.BDDMockito.given;
 class LoginPageTest {
 
     @Mock
-    HomeIdpDiscoveryConfig config;
+    HomeIdpForwarderConfig config;
 
     @Mock(answer = Answers.RETURNS_DEEP_STUBS)
     AuthenticationFlowContext context;
+
+    @Mock
+    Reauthentication reauthentication;
 
     @InjectMocks
     LoginPage cut;
@@ -69,6 +66,14 @@ class LoginPageTest {
         void givenSamlAuthnIsForcedThenDoNotBypassLogin() {
             given(context.getAuthenticationSession().getAuthNote(SAML_LOGIN_REQUEST_FORCEAUTHN))
                 .willReturn(SAML_FORCEAUTHN_REQUIREMENT);
+            boolean shouldByPass = cut.shouldByPass();
+            assertThat(shouldByPass).isFalse();
+        }
+
+        @Test
+        @DisplayName("and given reauthentication is required, then should not bypass login")
+        void givenReauthenticationIsRequiredThenDoNotBypassLogin() {
+            given(reauthentication.required()).willReturn(true);
             boolean shouldByPass = cut.shouldByPass();
             assertThat(shouldByPass).isFalse();
         }

@@ -2,33 +2,29 @@ package de.sventorben.keycloak.authentication.hidpd;
 
 import org.jboss.logging.Logger;
 import org.keycloak.authentication.AuthenticationFlowContext;
-import org.keycloak.protocol.oidc.OIDCLoginProtocol;
 import org.keycloak.sessions.AuthenticationSessionModel;
 import org.keycloak.util.TokenUtil;
 
-import javax.ws.rs.core.MultivaluedMap;
-
 import java.util.Set;
 
-import static org.keycloak.protocol.oidc.OIDCLoginProtocol.PROMPT_PARAM;
-import static org.keycloak.protocol.oidc.OIDCLoginProtocol.PROMPT_VALUE_CONSENT;
-import static org.keycloak.protocol.oidc.OIDCLoginProtocol.PROMPT_VALUE_LOGIN;
-import static org.keycloak.protocol.oidc.OIDCLoginProtocol.PROMPT_VALUE_SELECT_ACCOUNT;
+import static org.keycloak.protocol.oidc.OIDCLoginProtocol.*;
 import static org.keycloak.protocol.saml.SamlProtocol.SAML_FORCEAUTHN_REQUIREMENT;
 import static org.keycloak.protocol.saml.SamlProtocol.SAML_LOGIN_REQUEST_FORCEAUTHN;
 
-class LoginPage {
+final class LoginPage {
 
     private static final Logger LOG = Logger.getLogger(LoginPage.class);
     private static final Set<String> OIDC_PROMPT_NO_BYPASS =
         Set.of(PROMPT_VALUE_LOGIN, PROMPT_VALUE_CONSENT, PROMPT_VALUE_SELECT_ACCOUNT);
 
     private final AuthenticationFlowContext context;
-    private final HomeIdpDiscoveryConfig config;
+    private final HomeIdpForwarderConfig config;
+    private final Reauthentication reauthentication;
 
-    LoginPage(AuthenticationFlowContext context, HomeIdpDiscoveryConfig config) {
+    LoginPage(AuthenticationFlowContext context, HomeIdpForwarderConfig config, Reauthentication reauthentication) {
         this.context = context;
         this.config = config;
+        this.reauthentication = reauthentication;
     }
 
     boolean shouldByPass() {
@@ -43,6 +39,10 @@ class LoginPage {
             if (SAML_FORCEAUTHN_REQUIREMENT.equalsIgnoreCase(
                 authenticationSession.getAuthNote(SAML_LOGIN_REQUEST_FORCEAUTHN))) {
                 LOG.debugf("SAML: Forced authentication");
+                return false;
+            }
+            if (reauthentication.required()) {
+                LOG.debugf("Forced, cause reauthentication is required");
                 return false;
             }
         }
