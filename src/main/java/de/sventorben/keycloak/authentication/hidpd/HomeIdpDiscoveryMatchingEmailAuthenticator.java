@@ -1,5 +1,6 @@
 package de.sventorben.keycloak.authentication.hidpd;
 
+import de.sventorben.keycloak.authentication.hidpd.discovery.spi.HomeIdpDiscoverer;
 import org.jboss.logging.Logger;
 import org.keycloak.authentication.AuthenticationFlowContext;
 import org.keycloak.authentication.AuthenticationFlowError;
@@ -8,19 +9,29 @@ import org.keycloak.authentication.authenticators.broker.AbstractIdpAuthenticato
 import org.keycloak.authentication.authenticators.broker.util.SerializedBrokeredIdentityContext;
 import org.keycloak.authentication.authenticators.conditional.ConditionalAuthenticator;
 import org.keycloak.broker.provider.BrokeredIdentityContext;
-import org.keycloak.models.*;
+import org.keycloak.models.AuthenticatorConfigModel;
+import org.keycloak.models.IdentityProviderModel;
+import org.keycloak.models.KeycloakSession;
+import org.keycloak.models.RealmModel;
+import org.keycloak.models.UserModel;
 import org.keycloak.sessions.AuthenticationSessionModel;
 
 import java.util.List;
 
 public class HomeIdpDiscoveryMatchingEmailAuthenticator implements ConditionalAuthenticator {
-    private static final Logger LOG = Logger.getLogger(HomeIdpDiscoveryMatchingEmailAuthenticatorFactory.class);
+    private static final Logger LOG = Logger.getLogger(HomeIdpDiscoveryMatchingEmailAuthenticator.class);
 
     private static final String LINKING_IDENTITY_PROVIDER_NOTE = "LINKING_IDENTITY_PROVIDER";
 
+    private final AbstractHomeIdpDiscoveryAuthenticatorFactory.DiscovererConfig discovererConfig;
+
+    HomeIdpDiscoveryMatchingEmailAuthenticator(AbstractHomeIdpDiscoveryAuthenticatorFactory.DiscovererConfig discovererConfig) {
+        this.discovererConfig = discovererConfig;
+    }
+
     @Override
-    public boolean matchCondition(AuthenticationFlowContext context) {
-        AuthenticationSessionModel clientSession = context.getAuthenticationSession();
+    public boolean matchCondition(AuthenticationFlowContext authenticationFlowContext) {
+        AuthenticationSessionModel clientSession = authenticationFlowContext.getAuthenticationSession();
         String linkingNote = clientSession.getAuthNote(LINKING_IDENTITY_PROVIDER_NOTE);
 
         if (linkingNote != null) {
@@ -34,15 +45,17 @@ public class HomeIdpDiscoveryMatchingEmailAuthenticator implements ConditionalAu
         if (serializedCtx == null) {
             throw new AuthenticationFlowException("Not found serialized context in clientSession", AuthenticationFlowError.IDENTITY_PROVIDER_ERROR);
         }
-        BrokeredIdentityContext brokerContext = serializedCtx.deserialize(context.getSession(), clientSession);
+        BrokeredIdentityContext brokerContext = serializedCtx.deserialize(authenticationFlowContext.getSession(), clientSession);
         String providerId = brokerContext.getIdpConfig().getProviderId();
 
-        List<IdentityProviderModel> homeIdps = new HomeIdpDiscoverer(context).discoverForUser(serializedCtx.getEmail());
+
+        HomeIdpDiscoverer discoverer = authenticationFlowContext.getSession().getProvider(HomeIdpDiscoverer.class, discovererConfig.getProviderId());
+        List<IdentityProviderModel> homeIdps = discoverer.discoverForUser(authenticationFlowContext, serializedCtx.getEmail());
         boolean matchesEmail = homeIdps.stream().anyMatch(x -> x.isEnabled() && x.getProviderId().equals(providerId));
 
         LOG.debugf("Email %s %s identity provider %s", serializedCtx.getEmail(), matchesEmail ? "matches" : "doesn't match", providerId);
 
-        AuthenticatorConfigModel authConfig = context.getAuthenticatorConfig();
+        AuthenticatorConfigModel authConfig = authenticationFlowContext.getAuthenticatorConfig();
         if (authConfig!=null && authConfig.getConfig()!=null) {
             boolean negateOutput = Boolean.parseBoolean(authConfig.getConfig().get(HomeIdpDiscoveryMatchingEmailAuthenticatorFactory.CONF_NEGATE));
             return negateOutput != matchesEmail;
