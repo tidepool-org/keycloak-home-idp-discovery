@@ -28,7 +28,7 @@
         <developerConnection>scm:git:https://github.com/sventorben/keycloak-home-idp-discovery.git
         </developerConnection>
         <url>https://github.com/sventorben/keycloak-home-idp-discovery.git</url>
-        <tag>HEAD</tag>
+        <tag>v25.0.1</tag>
     </scm>
 
     <issueManagement>
