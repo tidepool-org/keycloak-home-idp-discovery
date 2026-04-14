@@ -292,6 +292,11 @@ public class HomeIdpDiscoveryRegistrationEmail implements FormAction {
         }
 
         @Override
+        public void success(String s) {
+
+        }
+
+        @Override
         public void failure(AuthenticationFlowError authenticationFlowError) {
 
         }
