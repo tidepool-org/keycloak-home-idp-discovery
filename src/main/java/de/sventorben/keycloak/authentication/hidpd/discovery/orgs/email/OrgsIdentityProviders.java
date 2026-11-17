@@ -31,6 +31,9 @@ final class OrgsIdentityProviders implements IdentityProviders {
                     .filter(OrganizationModel::isEnabled)
                     .flatMap(OrganizationModel::getIdentityProviders)
                     .filter(IdentityProviderModel::isEnabled)
+                    // Since Keycloak 26.8 an identity provider can be linked to several organizations;
+                    // without this a shared IdP would be listed once per organization of the user.
+                    .distinct()
                     .collect(Collectors.toList());
             }
         } else {
