@@ -2,6 +2,7 @@ package de.sventorben.keycloak.authentication;
 
 import dasniko.testcontainers.keycloak.KeycloakContainer;
 import de.sventorben.keycloak.authentication.pages.AccountConsolePage;
+import de.sventorben.keycloak.authentication.pages.Navigation;
 import de.sventorben.keycloak.authentication.pages.SelectIdpPage;
 import de.sventorben.keycloak.authentication.pages.TestRealmLoginPage;
 import de.sventorben.keycloak.authentication.pages.UpstreamIdpMock;
@@ -183,6 +184,29 @@ class HomeIdpDiscoveryIT {
             assertThat(cookies.stream().map(Cookie::getName).collect(Collectors.toList()))
                 .doesNotContain(COOKIE_NAME_REMEMBER_ME);
         }
+
+        @Test
+        @DisplayName("Given the user has checked 'remember me' feature and no Hom IdP for user exists, remember user in cookie")
+        public void testUserGetsRememberedThoughNotRedirected() {
+            accountConsolePage().open();
+
+            TestRealmLoginPage testRealmLoginPage = testRealmLoginPage();
+            testRealmLoginPage.enableRememberMe();
+            testRealmLoginPage.signIn("test6@local.local");
+            assertNotRedirected();
+
+            Set<Cookie> cookies = webDriver.manage().getCookies();
+            assertThat(cookies).anySatisfy(c -> {
+                assertThat(c.getName()).isEqualTo(COOKIE_NAME_REMEMBER_ME);
+                assertThat(c.getValue()).isEqualTo("\"username:test6%40local.local\"");
+                assertThat(c.getPath()).isEqualTo("/realms/test-realm/");
+                assertThat(c.getDomain()).isEqualTo("keycloak");
+                assertThat(c.getSameSite()).isEqualTo("Lax");
+                assertThat(c.getExpiry()).isAfter(new Date());
+            });
+
+            testRealmLoginPage.assertRememberMe(true);
+        }
     }
 
     @Nested
@@ -272,7 +296,11 @@ class HomeIdpDiscoveryIT {
                 public void whenRestartingFlow() {
                     upstreamIdpMock().redirectToDownstreamWithLoginHint("test", null);
                     testRealmLoginPage().signIn(usernameWithMultipleIdps);
-                    String restartUrl = webDriver.getCurrentUrl().replace("/authenticate", "/restart") + "&skip_logout=false";
+                    String authenticateUrl = webDriver.getCurrentUrl();
+                    // Fail loudly rather than silently navigating to an unchanged URL if the sign-in
+                    // navigation has not completed.
+                    assertThat(authenticateUrl).contains("/authenticate");
+                    String restartUrl = authenticateUrl.replace("/authenticate", "/restart") + "&skip_logout=false";
                     webDriver.navigate().to(restartUrl);
 
                     testRealmLoginPage().assertUsernameFieldIsDisplayed();
@@ -429,7 +457,7 @@ class HomeIdpDiscoveryIT {
         @Test
         @DisplayName("then pass login_hint parameter to downstream IdP")
         public void willForwardLoginHint() {
-            assertThat(webDriver.getCurrentUrl()).contains("&login_hint=someone%40example.com&");
+            assertUrlContains("&login_hint=someone%40example.com&");
         }
     }
 
@@ -525,7 +553,7 @@ class HomeIdpDiscoveryIT {
             @DisplayName("then pass login_hint parameter to downstream IdP")
             public void willForwardLoginHint() {
                 testRealmLoginPage().signIn(username);
-                assertThat(webDriver.getCurrentUrl()).contains("&login_hint=idp-test5-username&");
+                assertUrlContains("&login_hint=idp-test5-username&");
             }
         }
     }
@@ -557,7 +585,12 @@ class HomeIdpDiscoveryIT {
 
     private void assertRedirectedToIdp(String idpAlias) {
         assertRedirectedTo(KEYCLOAK_BASE_URL + "/realms/idp/protocol/openid-connect/auth");
-        assertThat(webDriver.getCurrentUrl()).contains("broker%2F" + idpAlias + "%2F");
+        assertUrlContains("broker%2F" + idpAlias + "%2F");
+    }
+
+    private void assertUrlContains(String fragment) {
+        Navigation.awaitUrlContaining(webDriver, fragment);
+        assertThat(webDriver.getCurrentUrl()).contains(fragment);
     }
 
     private void assertNotRedirected() {
